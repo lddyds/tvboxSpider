@@ -1,6 +1,5 @@
 package com.github.catvod.spider;
 
-import android.content.Context;
 import android.net.Uri;
 import android.text.TextUtils;
 
@@ -10,6 +9,7 @@ import com.github.catvod.bean.Vod;
 import com.github.catvod.crawler.Spider;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Image;
+import com.github.catvod.utils.Path;
 import com.github.catvod.utils.Util;
 
 import java.io.File;
@@ -19,31 +19,20 @@ import java.util.List;
 
 public class Push extends Spider {
 
-    private final Ali ali;
-
-    public Push() {
-        ali = new Ali();
-    }
-
     @Override
-    public void init(Context context, String extend) {
-        ali.init(context, extend);
-    }
-
-    @Override
-    public String detailContent(List<String> ids) throws Exception {
-        if (Ali.pattern.matcher(ids.get(0)).find()) return ali.detailContent(ids);
+    public String detailContent(List<String> ids) {
         return Result.string(vod(ids.get(0)));
     }
 
     @Override
     public String playerContent(String flag, String id, List<String> vipFlags) {
-        if (id.startsWith("http") && id.contains("***")) id = id.replace("***", "#");
-        if (flag.equals("直連")) return Result.get().url(id).subs(getSubs(id)).string();
-        if (flag.equals("解析")) return Result.get().parse().jx().url(id).string();
-        if (flag.equals("嗅探")) return Result.get().parse().url(id).string();
-        if (flag.equals("迅雷")) return Result.get().url(id).string();
-        return ali.playerContent(flag, id, vipFlags);
+        if (id.contains("://") && id.contains("***")) id = id.replace("***", "#");
+        return switch (flag) {
+            case "直連" -> Result.get().url(id).subs(getSubs(id)).string();
+            case "解析" -> Result.get().parse().jx().url(id).string();
+            case "嗅探" -> Result.get().parse().url(id).string();
+            default -> Result.get().url(id).string();
+        };
     }
 
     private Vod vod(String url) {
@@ -51,11 +40,14 @@ public class Push extends Spider {
         vod.setVodId(url);
         vod.setVodPic(Image.PUSH);
         vod.setTypeName("FongMi");
-        vod.setVodName(url.startsWith("file://") ? new File(url).getName() : url);
-        if (url.startsWith("http") && url.contains("#")) url = url.replace("#", "***");
+        vod.setVodName(url.startsWith("file://") ? new File(url).getName() : "");
+        if (url.contains("://") && url.contains("#")) url = url.replace("#", "***");
         if (Util.isThunder(url)) {
             vod.setVodPlayUrl(url);
             vod.setVodPlayFrom("迅雷");
+        } else if (url.contains("youtube.com")) {
+            vod.setVodPlayUrl(url);
+            vod.setVodPlayFrom("YouTube");
         } else if (url.contains("$")) {
             vod.setVodPlayFrom("直連");
             vod.setVodPlayUrl(TextUtils.join("#", url.split("\n")));
@@ -89,8 +81,7 @@ public class Push extends Spider {
 
     private void setFileSub(String url, List<Sub> subs) {
         File file = new File(url.replace("file://", ""));
-        if (file.getParentFile() == null) return;
-        for (File f : file.getParentFile().listFiles()) {
+        for (File f : Path.list(file.getParentFile())) {
             String ext = Util.getExt(f.getName());
             if (Util.isSub(ext)) subs.add(Sub.create().name(Util.removeExt(f.getName())).ext(ext).url("file://" + f.getAbsolutePath()));
         }
